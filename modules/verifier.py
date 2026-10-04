@@ -235,27 +235,214 @@ def _verify_ooxml(file_path: Path, password: str) -> bool:
         ) from exc
 
 
-def _verify_legacy_office(file_path: Path, password: str) -> bool:
+def _verify_doc(file_path: Path, password: str) -> bool:
     """
-    Verify *password* against a legacy Office document (.doc/.xls/.ppt)
+    Verify *password* against a legacy Microsoft Word document (.doc)
     using ``msoffcrypto-tool``.
 
-    Implementation planned for Phase 2.
+    Parameters
+    ----------
+    file_path:
+        Path to the DOC file.
+    password:
+        The candidate password string to test.
+
+    Returns
+    -------
+    bool
+        ``True`` if the password unlocks the document (or if unencrypted), ``False`` otherwise.
+
+    Raises
+    ------
+    VerificationError
+        If the file does not exist, cannot be read, or is corrupt.
     """
-    raise NotImplementedError(
-        "Legacy Office (doc/xls/ppt) verification is not yet implemented (Phase 2)."
-    )
+    try:
+        import msoffcrypto
+        import msoffcrypto.exceptions
+    except ImportError as exc:
+        raise VerificationError(
+            "The 'msoffcrypto-tool' package is required for legacy Word document verification. "
+            "Install it via: pip install -r requirements.txt"
+        ) from exc
+
+    try:
+        with open(file_path, "rb") as f:
+            office_file = msoffcrypto.OfficeFile(f)
+            if not office_file.is_encrypted():
+                return True
+            office_file.load_key(password=password)
+            return True
+    except (msoffcrypto.exceptions.InvalidKeyError, msoffcrypto.exceptions.DecryptionError):
+        return False
+    except (msoffcrypto.exceptions.FileFormatError, msoffcrypto.exceptions.ParseError) as exc:
+        raise VerificationError(
+            f"Corrupt or invalid legacy Word document '{file_path.name}': {exc}"
+        ) from exc
+    except OSError as exc:
+        raise VerificationError(
+            f"Cannot read '{file_path.name}': {exc}"
+        ) from exc
+
+
+def _verify_xls(file_path: Path, password: str) -> bool:
+    """
+    Verify *password* against a legacy Microsoft Excel spreadsheet (.xls)
+    using ``msoffcrypto-tool``.
+
+    Parameters
+    ----------
+    file_path:
+        Path to the XLS file.
+    password:
+        The candidate password string to test.
+
+    Returns
+    -------
+    bool
+        ``True`` if the password unlocks the document (or if unencrypted), ``False`` otherwise.
+
+    Raises
+    ------
+    VerificationError
+        If the file does not exist, cannot be read, or is corrupt.
+    """
+    try:
+        import msoffcrypto
+        import msoffcrypto.exceptions
+    except ImportError as exc:
+        raise VerificationError(
+            "The 'msoffcrypto-tool' package is required for legacy Excel spreadsheet verification. "
+            "Install it via: pip install -r requirements.txt"
+        ) from exc
+
+    try:
+        with open(file_path, "rb") as f:
+            office_file = msoffcrypto.OfficeFile(f)
+            if not office_file.is_encrypted():
+                return True
+            office_file.load_key(password=password)
+            return True
+    except (msoffcrypto.exceptions.InvalidKeyError, msoffcrypto.exceptions.DecryptionError):
+        return False
+    except (msoffcrypto.exceptions.FileFormatError, msoffcrypto.exceptions.ParseError) as exc:
+        raise VerificationError(
+            f"Corrupt or invalid legacy Excel spreadsheet '{file_path.name}': {exc}"
+        ) from exc
+    except OSError as exc:
+        raise VerificationError(
+            f"Cannot read '{file_path.name}': {exc}"
+        ) from exc
+
+
+def _verify_ppt(file_path: Path, password: str) -> bool:
+    """
+    Verify *password* against a legacy Microsoft PowerPoint presentation (.ppt)
+    using ``msoffcrypto-tool``.
+
+    Parameters
+    ----------
+    file_path:
+        Path to the PPT file.
+    password:
+        The candidate password string to test.
+
+    Returns
+    -------
+    bool
+        ``True`` if the password unlocks the document (or if unencrypted), ``False`` otherwise.
+
+    Raises
+    ------
+    VerificationError
+        If the file does not exist, cannot be read, or is corrupt.
+    """
+    try:
+        import msoffcrypto
+        import msoffcrypto.exceptions
+    except ImportError as exc:
+        raise VerificationError(
+            "The 'msoffcrypto-tool' package is required for legacy PowerPoint presentation verification. "
+            "Install it via: pip install -r requirements.txt"
+        ) from exc
+
+    try:
+        with open(file_path, "rb") as f:
+            office_file = msoffcrypto.OfficeFile(f)
+            if not office_file.is_encrypted():
+                return True
+            office_file.load_key(password=password)
+            return True
+    except (msoffcrypto.exceptions.InvalidKeyError, msoffcrypto.exceptions.DecryptionError):
+        return False
+    except (msoffcrypto.exceptions.FileFormatError, msoffcrypto.exceptions.ParseError) as exc:
+        raise VerificationError(
+            f"Corrupt or invalid legacy PowerPoint presentation '{file_path.name}': {exc}"
+        ) from exc
+    except OSError as exc:
+        raise VerificationError(
+            f"Cannot read '{file_path.name}': {exc}"
+        ) from exc
 
 
 def _verify_7z(file_path: Path, password: str) -> bool:
     """
-    Verify *password* against a 7-Zip archive using ``py7zr``.
+    Verify *password* against a 7-Zip archive (.7z) using ``py7zr``.
 
-    Implementation planned for Phase 2.
+    Parameters
+    ----------
+    file_path:
+        Path to the 7Z file.
+    password:
+        The candidate password string to test.
+
+    Returns
+    -------
+    bool
+        ``True`` if the password unlocks the archive (or if unencrypted), ``False`` otherwise.
+
+    Raises
+    ------
+    VerificationError
+        If the file does not exist, cannot be read, or is corrupt.
     """
-    raise NotImplementedError(
-        "7-Zip verification is not yet implemented (Phase 2)."
-    )
+    try:
+        import py7zr
+        import py7zr.exceptions
+    except ImportError as exc:
+        raise VerificationError(
+            "The 'py7zr' package is required for 7-Zip archive verification. "
+            "Install it via: pip install -r requirements.txt"
+        ) from exc
+
+    if not Path(file_path).exists():
+        raise VerificationError(f"Cannot read '{file_path.name}': File not found")
+
+    try:
+        if not py7zr.is_7zfile(file_path):
+            raise VerificationError(
+                f"Corrupt or invalid 7-Zip archive '{file_path.name}': Not a valid 7z file"
+            )
+    except OSError as exc:
+        raise VerificationError(
+            f"Cannot read '{file_path.name}': {exc}"
+        ) from exc
+
+    try:
+        with py7zr.SevenZipFile(file_path, "r", password=password) as archive:
+            result = archive.testzip()
+            return result is None
+    except (
+        py7zr.exceptions.Bad7zFile,
+        py7zr.exceptions.PasswordRequired,
+        py7zr.exceptions.DecompressionError,
+        py7zr.exceptions.CrcError,
+        py7zr.exceptions.ArchiveError,
+        TypeError,
+        ValueError,
+        Exception,
+    ):
+        return False
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -270,9 +457,9 @@ _HANDLERS: dict[str, _Handler] = {
     ".docx": _verify_ooxml,
     ".xlsx": _verify_ooxml,
     ".pptx": _verify_ooxml,
-    ".doc":  _verify_legacy_office,
-    ".xls":  _verify_legacy_office,
-    ".ppt":  _verify_legacy_office,
+    ".doc":  _verify_doc,
+    ".xls":  _verify_xls,
+    ".ppt":  _verify_ppt,
     ".7z":   _verify_7z,
 }
 

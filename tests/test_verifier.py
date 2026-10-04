@@ -605,41 +605,840 @@ class TestVerifyPptx:
         assert matched == "pptx_secure_pass"
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# verify() — Phase 1 stubs (remaining formats)
-# ──────────────────────────────────────────────────────────────────────────────
+def create_test_plain_doc(file_path: Path) -> Path:
+    """Create a temporary valid unencrypted legacy Word (.doc) OLE document."""
+    import struct
+    from msoffcrypto.format.doc97 import FibBase, _packFibBase
 
-
-class TestVerifyPhase1Stubs:
-    """Remaining Phase 1 handlers must raise NotImplementedError."""
-
-    def _make_fake_file(self, tmp_path: Path, extension: str) -> Path:
-        f = tmp_path / f"test{extension}"
-        f.write_bytes(b"")
-        return f
-
-    @pytest.mark.parametrize(
-        "extension",
-        [".doc", ".xls", ".ppt", ".7z"],
+    fibbase = FibBase(
+        wIdent=0xA5EC, nFib=0x00C1, unused=0, lid=0x0409, pnNext=0,
+        fDot=0, fGlsy=0, fComplex=0, fHasPic=0, cQuickSaves=0,
+        fEncrypted=0, fWhichTblStm=1, fReadOnlyRecommended=0, fWriteReservation=0,
+        fExtChar=0, fLoadOverride=0, fFarEast=0, nFibBack=0x00C1, fObfuscation=0,
+        IKey=0, envr=0, fMac=0, fEmptySpecial=0, fLoadOverridePage=0,
+        reserved1=0, reserved2=0, fSpare0=0, reserved3=0, reserved4=0,
+        reserved5=0, reserved6=0,
     )
-    def test_stub_raises_not_implemented(
-        self, tmp_path: Path, extension: str
-    ) -> None:
-        fake = self._make_fake_file(tmp_path, extension)
-        with pytest.raises(NotImplementedError):
-            verify(fake, "any_password")
+    fib_bytes = _packFibBase(fibbase).getvalue()
+    word_doc_data = fib_bytes.ljust(4096, b"\x00")
+    table_data = b"\x00" * 4096
 
-    def test_verify_accepts_string_path(self, tmp_path: Path) -> None:
-        fake = tmp_path / "test.doc"
-        fake.write_bytes(b"")
-        with pytest.raises(NotImplementedError):
-            verify(str(fake), "password")
+    def dir_entry(name, entry_type, color, left, right, child, clsid, user_flags, time1, time2, start_sect, size_low, size_high):
+        name_utf16 = name.encode("utf-16-le") + b"\x00\x00"
+        name_buf = name_utf16.ljust(64, b"\x00")
+        return struct.pack(
+            "<64sHBBIII16sIQQIII",
+            name_buf,
+            len(name_utf16),
+            entry_type,
+            color,
+            left,
+            right,
+            child,
+            clsid,
+            user_flags,
+            time1,
+            time2,
+            start_sect,
+            size_low,
+            size_high,
+        )
 
-    def test_verify_accepts_path_object(self, tmp_path: Path) -> None:
-        fake = tmp_path / "test.7z"
-        fake.write_bytes(b"")
-        with pytest.raises(NotImplementedError):
-            verify(fake, "password")
+    root_ent = dir_entry("Root Entry", 5, 1, 0xFFFFFFFF, 0xFFFFFFFF, 1, b"\x00"*16, 0, 0, 0, 0xFFFFFFFE, 0, 0)
+    word_ent = dir_entry("wordDocument", 2, 1, 0xFFFFFFFF, 2, 0xFFFFFFFF, b"\x00"*16, 0, 0, 0, 1, 4096, 0)
+    tbl_ent = dir_entry("1Table", 2, 1, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, b"\x00"*16, 0, 0, 0, 9, 4096, 0)
+    empty_ent = b"\x00" * 128
+    dir_sector = root_ent + word_ent + tbl_ent + empty_ent
+
+    fat = [0xFFFFFFFE]
+    fat += list(range(2, 9)) + [0xFFFFFFFE]
+    fat += list(range(10, 17)) + [0xFFFFFFFE]
+    fat += [0xFFFFFFFD]
+    fat += [0xFFFFFFFF] * (128 - len(fat))
+    fat_sector = struct.pack("<128I", *fat)
+
+    msat = [17] + [0xFFFFFFFF] * 108
+    header = struct.pack(
+        "<8s16sHHHHHHIIIIIIIIII109I",
+        b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1",
+        b"\x00"*16,
+        0x003E,
+        0x0003,
+        0xFFFE,
+        0x0009,
+        0x0006,
+        0, 0, 0,
+        1,
+        0,
+        0,
+        4096,
+        0xFFFFFFFE,
+        0,
+        0xFFFFFFFE,
+        0,
+        *msat,
+    )
+
+    with open(file_path, "wb") as f:
+        f.write(header)
+        f.write(dir_sector)
+        f.write(word_doc_data)
+        f.write(table_data)
+        f.write(fat_sector)
+    return file_path
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# verify() — Legacy Word (.doc) verifier
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class TestVerifyDoc:
+    """Tests for legacy Microsoft Word (.doc) verification."""
+
+    def test_verify_doc_unencrypted_document(self, tmp_path: Path) -> None:
+        doc_path = tmp_path / "unencrypted.doc"
+        create_test_plain_doc(doc_path)
+        assert verify(doc_path, "any_password") is True
+
+    def test_verify_doc_correct_password(self, tmp_path: Path) -> None:
+        doc_path = tmp_path / "locked.doc"
+        create_test_plain_doc(doc_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "secret_doc_pass":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Invalid password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            assert verify(doc_path, "secret_doc_pass") is True
+
+    def test_verify_doc_incorrect_password(self, tmp_path: Path) -> None:
+        doc_path = tmp_path / "locked.doc"
+        create_test_plain_doc(doc_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            mock.load_key.side_effect = msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            return mock
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            assert verify(doc_path, "wrong_password") is False
+
+    def test_verify_doc_case_sensitive(self, tmp_path: Path) -> None:
+        doc_path = tmp_path / "locked.doc"
+        create_test_plain_doc(doc_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "DocCasePass2026":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            assert verify(doc_path, "doccasepass2026") is False
+            assert verify(doc_path, "DocCasePass2026") is True
+
+    def test_verify_doc_unicode_password(self, tmp_path: Path) -> None:
+        doc_path = tmp_path / "locked.doc"
+        create_test_plain_doc(doc_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "döc_🔒_pass":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            assert verify(doc_path, "döc_🔒_pass") is True
+            assert verify(doc_path, "wrong") is False
+
+    def test_verify_doc_accepts_str_and_path(self, tmp_path: Path) -> None:
+        doc_path = tmp_path / "test.doc"
+        create_test_plain_doc(doc_path)
+        assert verify(str(doc_path), "password") is True
+        assert verify(doc_path, "password") is True
+
+    def test_verify_doc_nonexistent_file_raises_verification_error(self, tmp_path: Path) -> None:
+        missing = tmp_path / "nonexistent.doc"
+        with pytest.raises(VerificationError, match="Cannot read"):
+            verify(missing, "any")
+
+    def test_verify_doc_corrupt_file_raises_verification_error(self, tmp_path: Path) -> None:
+        corrupt = tmp_path / "corrupt.doc"
+        corrupt.write_bytes(b"not a valid doc file")
+        with pytest.raises(VerificationError, match="Corrupt or invalid legacy Word document"):
+            verify(corrupt, "any")
+
+    def test_verify_doc_multiple_candidates_finds_match(self, tmp_path: Path) -> None:
+        doc_path = tmp_path / "document.doc"
+        create_test_plain_doc(doc_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "correct_candidate":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        candidates = ["wrong1", "wrong2", "correct_candidate", "wrong3"]
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            results = [verify(doc_path, c) for c in candidates]
+            assert results == [False, False, True, False]
+
+    def test_verify_doc_integration_with_candidate_loader(self, tmp_path: Path) -> None:
+        from modules.candidate_loader import load_candidates
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        pw_file = tmp_path / "passwords.txt"
+        pw_file.write_text("# Clues\nspring2026\n# Target\ndoc_target_pass\nwinter2026\n", encoding="utf-8")
+
+        doc_path = tmp_path / "legacy_report.doc"
+        create_test_plain_doc(doc_path)
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "doc_target_pass":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        candidates, stats = load_candidates(pw_file)
+        assert stats.total_usable == 3
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            matched = None
+            for c in candidates:
+                if verify(doc_path, c):
+                    matched = c
+                    break
+
+            assert matched == "doc_target_pass"
+
+
+def create_test_plain_xls(file_path: Path) -> Path:
+    """Create a temporary valid unencrypted legacy Excel (.xls) OLE document."""
+    import struct
+
+    bof_content = struct.pack("<HHHHII", 0x0600, 0x0005, 0x0DBB, 0x0CC0, 0x00000000, 0x00000000)
+    bof_record = struct.pack("<HH", 2057, len(bof_content)) + bof_content
+    eof_record = struct.pack("<HH", 10, 0)
+    workbook_data = (bof_record + eof_record).ljust(4096, b"\x00")
+
+    def dir_entry(name, entry_type, color, left, right, child, clsid, user_flags, time1, time2, start_sect, size_low, size_high):
+        name_utf16 = name.encode("utf-16-le") + b"\x00\x00"
+        name_buf = name_utf16.ljust(64, b"\x00")
+        return struct.pack(
+            "<64sHBBIII16sIQQIII",
+            name_buf,
+            len(name_utf16),
+            entry_type,
+            color,
+            left,
+            right,
+            child,
+            clsid,
+            user_flags,
+            time1,
+            time2,
+            start_sect,
+            size_low,
+            size_high,
+        )
+
+    root_ent = dir_entry("Root Entry", 5, 1, 0xFFFFFFFF, 0xFFFFFFFF, 1, b"\x00"*16, 0, 0, 0, 0xFFFFFFFE, 0, 0)
+    wb_ent = dir_entry("Workbook", 2, 1, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, b"\x00"*16, 0, 0, 0, 1, 4096, 0)
+    empty_ent = b"\x00" * 128
+    dir_sector = root_ent + wb_ent + empty_ent + empty_ent
+
+    fat = [0xFFFFFFFE]
+    fat += list(range(2, 9)) + [0xFFFFFFFE]
+    fat += [0xFFFFFFFD]
+    fat += [0xFFFFFFFF] * (128 - len(fat))
+    fat_sector = struct.pack("<128I", *fat)
+
+    msat = [9] + [0xFFFFFFFF] * 108
+    header = struct.pack(
+        "<8s16sHHHHHHIIIIIIIIII109I",
+        b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1",
+        b"\x00"*16,
+        0x003E,
+        0x0003,
+        0xFFFE,
+        0x0009,
+        0x0006,
+        0, 0, 0,
+        1,
+        0,
+        0,
+        4096,
+        0xFFFFFFFE,
+        0,
+        0xFFFFFFFE,
+        0,
+        *msat,
+    )
+
+    with open(file_path, "wb") as f:
+        f.write(header)
+        f.write(dir_sector)
+        f.write(workbook_data)
+        f.write(fat_sector)
+    return file_path
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# verify() — Legacy Excel (.xls) verifier
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class TestVerifyLegacyXls:
+    """Tests for legacy Microsoft Excel (.xls) verification."""
+
+    def test_verify_xls_unencrypted_document(self, tmp_path: Path) -> None:
+        xls_path = tmp_path / "unencrypted.xls"
+        create_test_plain_xls(xls_path)
+        assert verify(xls_path, "any_password") is True
+
+    def test_verify_xls_correct_password(self, tmp_path: Path) -> None:
+        xls_path = tmp_path / "locked.xls"
+        create_test_plain_xls(xls_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "secret_xls_pass":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Invalid password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            assert verify(xls_path, "secret_xls_pass") is True
+
+    def test_verify_xls_incorrect_password(self, tmp_path: Path) -> None:
+        xls_path = tmp_path / "locked.xls"
+        create_test_plain_xls(xls_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            mock.load_key.side_effect = msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            return mock
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            assert verify(xls_path, "wrong_password") is False
+
+    def test_verify_xls_case_sensitive(self, tmp_path: Path) -> None:
+        xls_path = tmp_path / "locked.xls"
+        create_test_plain_xls(xls_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "XlsCasePass2026":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            assert verify(xls_path, "xlscasepass2026") is False
+            assert verify(xls_path, "XlsCasePass2026") is True
+
+    def test_verify_xls_unicode_password(self, tmp_path: Path) -> None:
+        xls_path = tmp_path / "locked.xls"
+        create_test_plain_xls(xls_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "xlş_🔒_pass":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            assert verify(xls_path, "xlş_🔒_pass") is True
+            assert verify(xls_path, "wrong") is False
+
+    def test_verify_xls_accepts_str_and_path(self, tmp_path: Path) -> None:
+        xls_path = tmp_path / "test.xls"
+        create_test_plain_xls(xls_path)
+        assert verify(str(xls_path), "password") is True
+        assert verify(xls_path, "password") is True
+
+    def test_verify_xls_nonexistent_file_raises_verification_error(self, tmp_path: Path) -> None:
+        missing = tmp_path / "nonexistent.xls"
+        with pytest.raises(VerificationError, match="Cannot read"):
+            verify(missing, "any")
+
+    def test_verify_xls_corrupt_file_raises_verification_error(self, tmp_path: Path) -> None:
+        corrupt = tmp_path / "corrupt.xls"
+        corrupt.write_bytes(b"not a valid xls file")
+        with pytest.raises(VerificationError, match="Corrupt or invalid legacy Excel spreadsheet"):
+            verify(corrupt, "any")
+
+    def test_verify_xls_multiple_candidates_finds_match(self, tmp_path: Path) -> None:
+        xls_path = tmp_path / "sheet.xls"
+        create_test_plain_xls(xls_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "correct_candidate":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        candidates = ["wrong1", "wrong2", "correct_candidate", "wrong3"]
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            results = [verify(xls_path, c) for c in candidates]
+            assert results == [False, False, True, False]
+
+    def test_verify_xls_integration_with_candidate_loader(self, tmp_path: Path) -> None:
+        from modules.candidate_loader import load_candidates
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        pw_file = tmp_path / "passwords.txt"
+        pw_file.write_text("# Clues\nspring2026\n# Target\nxls_target_pass\nwinter2026\n", encoding="utf-8")
+
+        xls_path = tmp_path / "legacy_finances.xls"
+        create_test_plain_xls(xls_path)
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "xls_target_pass":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        candidates, stats = load_candidates(pw_file)
+        assert stats.total_usable == 3
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            matched = None
+            for c in candidates:
+                if verify(xls_path, c):
+                    matched = c
+                    break
+
+            assert matched == "xls_target_pass"
+
+
+def create_test_plain_ppt(file_path: Path) -> Path:
+    """Create a temporary valid unencrypted legacy PowerPoint (.ppt) OLE document."""
+    import struct
+
+    rh_cu = struct.pack("<HHI", 0x0000, 0x0FF6, 20)
+    cu_body = struct.pack("<IIIHHBB2sI", 0x00000014, 0xE391C05F, 0, 0, 0x03F4, 3, 0, b"\x00\x00", 8)
+    current_user_data = (rh_cu + cu_body).ljust(4096, b"\x00")
+
+    rh_ue = struct.pack("<HHI", 0x0000, 0x0FF5, 28)
+    ue_body = struct.pack("<IHBBIIIIH2s", 1, 0, 0, 3, 0, 0, 1, 1, 1, b"\x00\x00")
+    ppt_doc_data = (rh_ue + ue_body).ljust(4096, b"\x00")
+
+    def dir_entry(name, entry_type, color, left, right, child, clsid, user_flags, time1, time2, start_sect, size_low, size_high):
+        name_utf16 = name.encode("utf-16-le") + b"\x00\x00"
+        name_buf = name_utf16.ljust(64, b"\x00")
+        return struct.pack(
+            "<64sHBBIII16sIQQIII",
+            name_buf,
+            len(name_utf16),
+            entry_type,
+            color,
+            left,
+            right,
+            child,
+            clsid,
+            user_flags,
+            time1,
+            time2,
+            start_sect,
+            size_low,
+            size_high,
+        )
+
+    root_ent = dir_entry("Root Entry", 5, 1, 0xFFFFFFFF, 0xFFFFFFFF, 1, b"\x00"*16, 0, 0, 0, 0xFFFFFFFE, 0, 0)
+    cu_ent = dir_entry("Current User", 2, 1, 0xFFFFFFFF, 2, 0xFFFFFFFF, b"\x00"*16, 0, 0, 0, 1, 4096, 0)
+    ppt_ent = dir_entry("PowerPoint Document", 2, 1, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, b"\x00"*16, 0, 0, 0, 9, 4096, 0)
+    empty_ent = b"\x00" * 128
+    dir_sector = root_ent + cu_ent + ppt_ent + empty_ent
+
+    fat = [0xFFFFFFFE]
+    fat += list(range(2, 9)) + [0xFFFFFFFE]
+    fat += list(range(10, 17)) + [0xFFFFFFFE]
+    fat += [0xFFFFFFFD]
+    fat += [0xFFFFFFFF] * (128 - len(fat))
+    fat_sector = struct.pack("<128I", *fat)
+
+    msat = [17] + [0xFFFFFFFF] * 108
+    header = struct.pack(
+        "<8s16sHHHHHHIIIIIIIIII109I",
+        b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1",
+        b"\x00"*16,
+        0x003E,
+        0x0003,
+        0xFFFE,
+        0x0009,
+        0x0006,
+        0, 0, 0,
+        1,
+        0,
+        0,
+        4096,
+        0xFFFFFFFE,
+        0,
+        0xFFFFFFFE,
+        0,
+        *msat,
+    )
+
+    with open(file_path, "wb") as f:
+        f.write(header)
+        f.write(dir_sector)
+        f.write(current_user_data)
+        f.write(ppt_doc_data)
+        f.write(fat_sector)
+    return file_path
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# verify() — Legacy PowerPoint (.ppt) verifier
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class TestVerifyLegacyPpt:
+    """Tests for legacy Microsoft PowerPoint (.ppt) verification."""
+
+    def test_verify_ppt_unencrypted_document(self, tmp_path: Path) -> None:
+        ppt_path = tmp_path / "unencrypted.ppt"
+        create_test_plain_ppt(ppt_path)
+        assert verify(ppt_path, "any_password") is True
+
+    def test_verify_ppt_correct_password(self, tmp_path: Path) -> None:
+        ppt_path = tmp_path / "locked.ppt"
+        create_test_plain_ppt(ppt_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "secret_ppt_pass":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Invalid password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            assert verify(ppt_path, "secret_ppt_pass") is True
+
+    def test_verify_ppt_incorrect_password(self, tmp_path: Path) -> None:
+        ppt_path = tmp_path / "locked.ppt"
+        create_test_plain_ppt(ppt_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            mock.load_key.side_effect = msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            return mock
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            assert verify(ppt_path, "wrong_password") is False
+
+    def test_verify_ppt_case_sensitive(self, tmp_path: Path) -> None:
+        ppt_path = tmp_path / "locked.ppt"
+        create_test_plain_ppt(ppt_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "PptCasePass2026":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            assert verify(ppt_path, "pptcasepass2026") is False
+            assert verify(ppt_path, "PptCasePass2026") is True
+
+    def test_verify_ppt_unicode_password(self, tmp_path: Path) -> None:
+        ppt_path = tmp_path / "locked.ppt"
+        create_test_plain_ppt(ppt_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "ppt_🔒_pass":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            assert verify(ppt_path, "ppt_🔒_pass") is True
+            assert verify(ppt_path, "wrong") is False
+
+    def test_verify_ppt_accepts_str_and_path(self, tmp_path: Path) -> None:
+        ppt_path = tmp_path / "test.ppt"
+        create_test_plain_ppt(ppt_path)
+        assert verify(str(ppt_path), "password") is True
+        assert verify(ppt_path, "password") is True
+
+    def test_verify_ppt_nonexistent_file_raises_verification_error(self, tmp_path: Path) -> None:
+        missing = tmp_path / "nonexistent.ppt"
+        with pytest.raises(VerificationError, match="Cannot read"):
+            verify(missing, "any")
+
+    def test_verify_ppt_corrupt_file_raises_verification_error(self, tmp_path: Path) -> None:
+        corrupt = tmp_path / "corrupt.ppt"
+        corrupt.write_bytes(b"not a valid ppt file")
+        with pytest.raises(VerificationError, match="Corrupt or invalid legacy PowerPoint presentation"):
+            verify(corrupt, "any")
+
+    def test_verify_ppt_multiple_candidates_finds_match(self, tmp_path: Path) -> None:
+        ppt_path = tmp_path / "deck.ppt"
+        create_test_plain_ppt(ppt_path)
+
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "correct_candidate":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        candidates = ["wrong1", "wrong2", "correct_candidate", "wrong3"]
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            results = [verify(ppt_path, c) for c in candidates]
+            assert results == [False, False, True, False]
+
+    def test_verify_ppt_integration_with_candidate_loader(self, tmp_path: Path) -> None:
+        from modules.candidate_loader import load_candidates
+        from unittest.mock import MagicMock, patch
+        import msoffcrypto.exceptions
+
+        pw_file = tmp_path / "passwords.txt"
+        pw_file.write_text("# Clues\nspring2026\n# Target\nppt_target_pass\nwinter2026\n", encoding="utf-8")
+
+        ppt_path = tmp_path / "legacy_slides.ppt"
+        create_test_plain_ppt(ppt_path)
+
+        def mock_office_file(f):
+            mock = MagicMock()
+            mock.is_encrypted.return_value = True
+            def mock_load_key(password):
+                if password == "ppt_target_pass":
+                    return True
+                raise msoffcrypto.exceptions.InvalidKeyError("Bad password")
+            mock.load_key.side_effect = mock_load_key
+            return mock
+
+        candidates, stats = load_candidates(pw_file)
+        assert stats.total_usable == 3
+
+        with patch("msoffcrypto.OfficeFile", side_effect=mock_office_file):
+            matched = None
+            for c in candidates:
+                if verify(ppt_path, c):
+                    matched = c
+                    break
+
+            assert matched == "ppt_target_pass"
+
+
+def create_test_plain_7z(file_path: Path) -> Path:
+    """Create a temporary unencrypted 7-Zip archive using py7zr."""
+    import py7zr
+
+    with py7zr.SevenZipFile(file_path, "w") as archive:
+        archive.writestr("plain.txt", "Sample unencrypted 7z content")
+    return file_path
+
+
+def create_test_encrypted_7z(
+    file_path: Path, password: str = "sevenzippass123", header_encryption: bool = True
+) -> Path:
+    """Create a temporary encrypted 7-Zip archive using py7zr."""
+    import py7zr
+
+    with py7zr.SevenZipFile(
+        file_path, "w", password=password, header_encryption=header_encryption
+    ) as archive:
+        archive.writestr("secret.txt", "Sample confidential 7z payload")
+    return file_path
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# verify() — 7-Zip Archive (.7z) verifier
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class TestVerify7z:
+    """Tests for 7-Zip (.7z) archive verification using py7zr."""
+
+    def test_verify_7z_encrypted_header_correct_password(self, tmp_path: Path) -> None:
+        archive_path = tmp_path / "locked_header.7z"
+        create_test_encrypted_7z(archive_path, password="secret_7z_pass", header_encryption=True)
+        assert verify(archive_path, "secret_7z_pass") is True
+
+    def test_verify_7z_encrypted_header_incorrect_password(self, tmp_path: Path) -> None:
+        archive_path = tmp_path / "locked_header.7z"
+        create_test_encrypted_7z(archive_path, password="secret_7z_pass", header_encryption=True)
+        assert verify(archive_path, "wrong_password") is False
+
+    def test_verify_7z_encrypted_payload_correct_password(self, tmp_path: Path) -> None:
+        archive_path = tmp_path / "locked_payload.7z"
+        create_test_encrypted_7z(archive_path, password="secret_7z_pass", header_encryption=False)
+        assert verify(archive_path, "secret_7z_pass") is True
+
+    def test_verify_7z_encrypted_payload_incorrect_password(self, tmp_path: Path) -> None:
+        archive_path = tmp_path / "locked_payload.7z"
+        create_test_encrypted_7z(archive_path, password="secret_7z_pass", header_encryption=False)
+        assert verify(archive_path, "wrong_password") is False
+
+    def test_verify_7z_unencrypted_archive(self, tmp_path: Path) -> None:
+        archive_path = tmp_path / "unencrypted.7z"
+        create_test_plain_7z(archive_path)
+        assert verify(archive_path, "any_password") is True
+
+    def test_verify_7z_case_sensitive(self, tmp_path: Path) -> None:
+        archive_path = tmp_path / "locked.7z"
+        create_test_encrypted_7z(archive_path, password="SevenZipPass2026")
+        assert verify(archive_path, "sevenzippass2026") is False
+        assert verify(archive_path, "SevenZipPass2026") is True
+
+    def test_verify_7z_unicode_password(self, tmp_path: Path) -> None:
+        archive_path = tmp_path / "locked.7z"
+        create_test_encrypted_7z(archive_path, password="7z_🔒_pass")
+        assert verify(archive_path, "7z_🔒_pass") is True
+        assert verify(archive_path, "wrong") is False
+
+    def test_verify_7z_accepts_str_and_path(self, tmp_path: Path) -> None:
+        archive_path = tmp_path / "test.7z"
+        create_test_plain_7z(archive_path)
+        assert verify(str(archive_path), "password") is True
+        assert verify(archive_path, "password") is True
+
+    def test_verify_7z_nonexistent_file_raises_verification_error(self, tmp_path: Path) -> None:
+        missing = tmp_path / "nonexistent.7z"
+        with pytest.raises(VerificationError, match="Cannot read"):
+            verify(missing, "any")
+
+    def test_verify_7z_corrupt_file_raises_verification_error(self, tmp_path: Path) -> None:
+        corrupt = tmp_path / "corrupt.7z"
+        corrupt.write_bytes(b"not a valid 7z archive header")
+        with pytest.raises(VerificationError, match="Corrupt or invalid 7-Zip archive"):
+            verify(corrupt, "any")
+
+    def test_verify_7z_multiple_candidates_finds_match(self, tmp_path: Path) -> None:
+        archive_path = tmp_path / "archive.7z"
+        create_test_encrypted_7z(archive_path, password="correct_candidate")
+        candidates = ["wrong1", "wrong2", "correct_candidate", "wrong3"]
+
+        results = [verify(archive_path, c) for c in candidates]
+        assert results == [False, False, True, False]
+
+    def test_verify_7z_integration_with_candidate_loader(self, tmp_path: Path) -> None:
+        from modules.candidate_loader import load_candidates
+
+        pw_file = tmp_path / "passwords.txt"
+        pw_file.write_text("# Clues\nspring2026\n# Target\n7z_target_pass\nwinter2026\n", encoding="utf-8")
+
+        archive_path = tmp_path / "backup.7z"
+        create_test_encrypted_7z(archive_path, password="7z_target_pass")
+
+        candidates, stats = load_candidates(pw_file)
+        assert stats.total_usable == 3
+
+        matched = None
+        for c in candidates:
+            if verify(archive_path, c):
+                matched = c
+                break
+
+        assert matched == "7z_target_pass"
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@
 ```
 1. Clone/download this repository
 2. Create your candidate list with help from memory or an AI assistant
-3. Save candidates → password_list/passwords.txt
+3. Save candidates → any .txt file inside password_list/
 4. Place your locked file → locked_files/
 5. Run: python main.py
 6. Watch live progress in the terminal
@@ -28,7 +28,7 @@
 pip install -r requirements.txt
 
 # 2. Add your candidate passwords (one per line)
-#    See password_list/README.md for format details
+#    You can create any .txt file in password_list/
 notepad password_list\passwords.txt
 
 # 3. Place your locked file in locked_files/
@@ -39,48 +39,51 @@ python main.py
 
 ---
 
-## Supported File Formats (Phase 1)
+## Supported File Formats
+
+All verification is performed 100% locally on your machine.
 
 | Format | Extension(s) | Library Used |
 |---|---|---|
-| ZIP Archive | `.zip` | `zipfile` (stdlib) |
+| ZIP Archive | `.zip` | `zipfile` (Python standard library) |
 | PDF Document | `.pdf` | `pikepdf` |
-| Word Document | `.docx`, `.doc` | `msoffcrypto-tool` |
-| Excel Spreadsheet | `.xlsx`, `.xls` | `msoffcrypto-tool` |
-| PowerPoint | `.pptx`, `.ppt` | `msoffcrypto-tool` |
+| Microsoft Word Document | `.docx`, `.doc` | `msoffcrypto-tool` |
+| Microsoft Excel Spreadsheet | `.xlsx`, `.xls` | `msoffcrypto-tool` |
+| Microsoft PowerPoint Presentation | `.pptx`, `.ppt` | `msoffcrypto-tool` |
 | 7-Zip Archive | `.7z` | `py7zr` |
 
 ---
 
-## Directory Layout
+## Project Structure
 
-```
-├── main.py                        # Entry point — run this
-├── passwords.txt                  # Sample template (copy to password_list/)
-├── requirements.txt
-├── README.md
-├── LICENSE
-├── .gitignore
+```text
+Forgotten-Password-Recovery/
+├── main.py                         # Entry point — run this
+├── requirements.txt                # Dependencies
+├── README.md                       # Documentation
+├── LICENSE                         # MIT License
+├── .gitignore                      # Prevents sensitive files from being committed
+├── conftest.py                     # Pytest configuration
 │
 ├── password_list/
-│   ├── README.md                  # Instructions for the candidate list
-│   └── passwords.txt              # ← YOUR candidate list goes here (not in Git)
+│   └── README.md                   # Instructions for candidate lists
 │
 ├── locked_files/
-│   ├── README.md                  # Supported formats & tips
-│   └── your_locked_file.zip       # ← YOUR locked file goes here (not in Git)
+│   └── README.md                   # Supported formats & usage tips
 │
 ├── results/
-│   └── README.md                  # Auto-saved recovery results (keep private!)
+│   └── README.md                   # Recovery results — keep private
 │
-├── modules/                       # Core logic — modular, one concern per file
+├── modules/                        # Core modular architecture
 │   ├── __init__.py
-│   ├── candidate_loader.py        # Reads, strips, deduplicates passwords.txt
-│   ├── file_detector.py           # Scans locked_files/, detects format
-│   ├── progress.py                # Rich-based live terminal UI
-│   └── verifier.py                # Dispatcher: routes to format handlers
+│   ├── candidate_loader.py         # Loads candidate passwords from .txt files
+│   ├── file_detector.py            # Detects supported file formats
+│   ├── progress.py                 # Rich-based live terminal UI
+│   └── verifier.py                 # Format-specific password verification
 │
-└── tests/                         # pytest unit tests
+└── tests/                          # Pytest test suite (205 tests)
+    ├── __init__.py
+    ├── README.md
     ├── test_candidate_loader.py
     ├── test_file_detector.py
     ├── test_progress.py
@@ -89,7 +92,9 @@ python main.py
 
 ---
 
-## passwords.txt Format
+## Candidate List Format (.txt)
+
+Create any `.txt` file inside `password_list/` (e.g. `passwords.txt` or `my_passwords.txt`):
 
 ```
 # Lines starting with # are comments — ignored
@@ -102,8 +107,8 @@ fluffy@home
 correct horse battery staple
 ```
 
-**Tip**: Use an AI assistant (Gemini, ChatGPT) to brainstorm variations — include  
-common substitutions (e→3, a→@, o→0), date variations, and capitalisation.
+* If multiple `.txt` files exist in `password_list/`, the tool prompts you to choose which list to test.
+* **Tip**: Use an AI assistant (Gemini, ChatGPT) to brainstorm variations based on what you remember — including common substitutions (e→3, a→@, o→0), date variations, and capitalisation.
 
 ---
 
@@ -155,3 +160,4 @@ pytest tests/ -v
 ## License
 
 [MIT](LICENSE) — see the LICENSE file for details.
+
