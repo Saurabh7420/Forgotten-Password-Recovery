@@ -1,0 +1,19 @@
+# ──────────────────────────────────────────────────────────
+# Forgotten Password Recovery Assistant — Dependencies
+# ──────────────────────────────────────────────────────────
+
+# Runtime: terminal UI
+rich>=13.0
+
+# Runtime: PDF verification (Phase 2)
+pikepdf>=8.0
+
+# Runtime: Office formats — OOXML (.docx/.xlsx/.pptx) and
+#          Legacy OLE (.doc/.xls/.ppt) verification (Phase 2)
+msoffcrypto-tool>=5.4
+
+# Runtime: 7-Zip verification (Phase 2)
+py7zr>=0.21
+
+# Development / testing
+pytest>=8.0
