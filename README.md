@@ -8,7 +8,7 @@
 
 ## Important Security and Privacy Notice
 
-- **100% Local Execution**: All operations run entirely on your local computer. No network connections, internet requests, or external API calls are made at any point.
+- **100% Local Execution**: All operations run entirely on your local computer. During recovery, the application performs all processing locally and does not make network requests or call external APIs.
 - **Local File Access**: Protected files are read directly from your local filesystem path. Files are **never** uploaded to any external server or cloud service.
 - **Git and GitHub Safety**: Actual password-protected files, candidate lists, passwords, and recovery history files must **never** be committed to Git or pushed to GitHub. The repository includes a configured `.gitignore` to keep user data private.
 - **Session Privacy**: Password candidates and recovery logs are stored only on your local machine and can be deleted immediately upon session completion.
@@ -271,7 +271,7 @@ Run all tests:
 python -m pytest -q
 ```
 
-**Test Suite Status**: `486 passed` (0 failures, 100% deterministic local execution).
+**Test Suite Status**: `486 passed` (0 failures) in the verified local test suite.
 
 ---
 
