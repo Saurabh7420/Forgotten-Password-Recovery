@@ -11,14 +11,15 @@ from modules.file_detector import (
     SUPPORTED_EXTENSIONS,
     DetectedFile,
     FileDetectionError,
+    detect_file_from_path,
     detect_locked_file,
     scan_locked_files,
 )
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Extension registry sanity checks
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestSupportedExtensions:
@@ -76,9 +77,9 @@ class TestSupportedExtensions:
             )
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# scan_locked_files — happy path
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# scan_locked_files â€” happy path
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestScanLockedFilesHappyPath:
@@ -138,9 +139,9 @@ class TestScanLockedFilesHappyPath:
         assert "notes.txt" in unsupported
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# scan_locked_files — skipped files
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# scan_locked_files â€” skipped files
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestScanLockedFilesSkippedFiles:
@@ -164,9 +165,9 @@ class TestScanLockedFilesSkippedFiles:
         assert unsupported == []
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# scan_locked_files — extension case sensitivity
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# scan_locked_files â€” extension case sensitivity
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestScanLockedFilesExtensionCase:
@@ -184,9 +185,9 @@ class TestScanLockedFilesExtensionCase:
         assert len(supported) == 1
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# scan_locked_files — error conditions
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# scan_locked_files â€” error conditions
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestScanLockedFilesErrors:
@@ -204,9 +205,9 @@ class TestScanLockedFilesErrors:
             scan_locked_files(f)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# detect_locked_file — single file (no interactive picker)
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# detect_locked_file â€” single file (no interactive picker)
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestDetectLockedFileSingleFile:
@@ -241,3 +242,113 @@ class TestDetectLockedFileSingleFile:
         (tmp_path / "README.md").write_text("hi", encoding="utf-8")
         with pytest.raises(FileDetectionError):
             detect_locked_file(tmp_path)
+
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# detect_file_from_path â€” manual file path detection
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+
+class TestDetectFileFromPath:
+    @pytest.mark.parametrize(
+        ("filename", "expected_ext", "expected_format"),
+        [
+            ("archive.zip", ".zip", "ZIP Archive"),
+            ("document.pdf", ".pdf", "PDF Document"),
+            ("doc.docx", ".docx", "Word Document (OOXML)"),
+            ("legacy.doc", ".doc", "Word Document (Legacy)"),
+            ("sheet.xlsx", ".xlsx", "Excel Spreadsheet (OOXML)"),
+            ("legacy.xls", ".xls", "Excel Spreadsheet (Legacy)"),
+            ("slides.pptx", ".pptx", "PowerPoint Presentation (OOXML)"),
+            ("legacy.ppt", ".ppt", "PowerPoint Presentation (Legacy)"),
+            ("bundle.7z", ".7z", "7-Zip Archive"),
+        ],
+    )
+    def test_all_supported_formats_detected(
+        self,
+        tmp_path: Path,
+        filename: str,
+        expected_ext: str,
+        expected_format: str,
+    ) -> None:
+        target = tmp_path / filename
+        target.write_bytes(b"dummy content")
+        result = detect_file_from_path(target)
+        assert isinstance(result, DetectedFile)
+        assert result.path == target
+        assert result.extension == expected_ext
+        assert result.format_name == expected_format
+
+    def test_string_path_input(self, tmp_path: Path) -> None:
+        target = tmp_path / "test.docx"
+        target.write_bytes(b"content")
+        result = detect_file_from_path(str(target))
+        assert result.path == target
+        assert result.extension == ".docx"
+
+    def test_path_with_spaces(self, tmp_path: Path) -> None:
+        target = tmp_path / "My Important File.docx"
+        target.write_bytes(b"content")
+        result = detect_file_from_path(target)
+        assert result.path == target
+        assert result.extension == ".docx"
+
+    def test_path_enclosed_in_double_quotes(self, tmp_path: Path) -> None:
+        target = tmp_path / "My Doc.pdf"
+        target.write_bytes(b"content")
+        quoted_str = f'"{target}"'
+        result = detect_file_from_path(quoted_str)
+        assert result.path == target
+        assert result.extension == ".pdf"
+
+    def test_path_enclosed_in_single_quotes(self, tmp_path: Path) -> None:
+        target = tmp_path / "My Doc.xlsx"
+        target.write_bytes(b"content")
+        quoted_str = f"'{target}'"
+        result = detect_file_from_path(quoted_str)
+        assert result.path == target
+        assert result.extension == ".xlsx"
+
+    def test_path_with_surrounding_whitespace(self, tmp_path: Path) -> None:
+        target = tmp_path / "test.zip"
+        target.write_bytes(b"content")
+        padded_str = f"   {target}   "
+        result = detect_file_from_path(padded_str)
+        assert result.path == target
+        assert result.extension == ".zip"
+
+    def test_uppercase_extension(self, tmp_path: Path) -> None:
+        target = tmp_path / "archive.ZIP"
+        target.write_bytes(b"content")
+        result = detect_file_from_path(target)
+        assert result.extension == ".zip"
+        assert result.format_name == "ZIP Archive"
+
+    def test_empty_string_raises_error(self) -> None:
+        with pytest.raises(FileDetectionError, match="No file path provided"):
+            detect_file_from_path("")
+
+    def test_whitespace_only_string_raises_error(self) -> None:
+        with pytest.raises(FileDetectionError, match="No file path provided"):
+            detect_file_from_path("   ")
+
+    def test_nonexistent_file_raises_error(self, tmp_path: Path) -> None:
+        missing = tmp_path / "does_not_exist.docx"
+        with pytest.raises(FileDetectionError, match="File not found"):
+            detect_file_from_path(missing)
+
+    def test_directory_path_raises_error(self, tmp_path: Path) -> None:
+        with pytest.raises(FileDetectionError, match="directory, not a regular file"):
+            detect_file_from_path(tmp_path)
+
+    def test_unsupported_format_raises_error(self, tmp_path: Path) -> None:
+        unsupported = tmp_path / "audio.mp3"
+        unsupported.write_bytes(b"content")
+        with pytest.raises(FileDetectionError, match="Unsupported file format"):
+            detect_file_from_path(unsupported)
+
+    def test_word_temporary_lock_file_raises_error(self, tmp_path: Path) -> None:
+        lock_file = tmp_path / "~$Important.docx"
+        lock_file.write_bytes(b"lock")
+        with pytest.raises(FileDetectionError, match=r"temporary lock file"):
+            detect_file_from_path(lock_file)

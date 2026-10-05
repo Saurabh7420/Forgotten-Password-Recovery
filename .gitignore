@@ -12,6 +12,9 @@ locked_files/*
 results/*
 !results/README.md
 !results/.gitkeep
+results/Round_*.txt
+results/recovery_round_*.txt
+results/SUCCESS_recovery_*.txt
 
 # Sample template at project root (user edits this, never commit their copy)
 passwords.txt

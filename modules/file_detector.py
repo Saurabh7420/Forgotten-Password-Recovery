@@ -279,3 +279,67 @@ def detect_locked_file(
     )
 
     return supported[choice - 1]
+
+
+def detect_file_from_path(file_path: str | Path) -> DetectedFile:
+    """
+    Validate and detect a locked file from an explicit file path provided by the user.
+
+    Parameters
+    ----------
+    file_path:
+        Path to the locked file (may include surrounding quotes or whitespace).
+
+    Returns
+    -------
+    DetectedFile
+        The detected file details (path, format_name, extension).
+
+    Raises
+    ------
+    FileDetectionError
+        If the file does not exist, is not a regular file, is a temporary file,
+        or has an unsupported file format.
+    """
+    raw_str = str(file_path).strip()
+    # Strip quotes that might be added when paths are copied in terminal / file explorers
+    if (raw_str.startswith('"') and raw_str.endswith('"')) or (
+        raw_str.startswith("'") and raw_str.endswith("'")
+    ):
+        raw_str = raw_str[1:-1].strip()
+
+    if not raw_str:
+        raise FileDetectionError("No file path provided. Please enter a valid file path.")
+
+    target_path = Path(raw_str)
+
+    if not target_path.exists():
+        raise FileDetectionError(
+            f"File not found: '{raw_str}'\n"
+            "  → Please check the path and ensure the file exists."
+        )
+
+    if not target_path.is_file():
+        raise FileDetectionError(
+            f"'{raw_str}' is a directory, not a regular file.\n"
+            "  → Please specify the path to a specific locked file."
+        )
+
+    if _is_temporary_word_file(target_path):
+        raise FileDetectionError(
+            f"'{target_path.name}' is a Microsoft Word temporary lock file (~$), not a valid document."
+        )
+
+    if not _is_supported(target_path):
+        ext_list = "  ".join(SUPPORTED_EXTENSIONS.keys())
+        raise FileDetectionError(
+            f"Unsupported file format '{target_path.suffix}' for '{target_path.name}'.\n"
+            f"  → Supported extensions: {ext_list}"
+        )
+
+    ext = target_path.suffix.lower()
+    return DetectedFile(
+        path=target_path,
+        format_name=SUPPORTED_EXTENSIONS[ext],
+        extension=ext,
+    )
